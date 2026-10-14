@@ -143,12 +143,6 @@ void sample_free(Sample* sample)
     }
 }
 
-int midi_assignment(float value)
-{
-    return isfinite(value) && value >= 0.0f && value <= 127.0f ?
-           (int)lroundf(value) : -1;
-}
-
 PadMode pad_mode(float value)
 {
     return !isfinite(value) || value < 0.5f ? PAD_ONE_SHOT :
@@ -187,7 +181,7 @@ void pad_trigger(Pad* pad, float velocity)
 
 void pad_release(Pad* pad, PadMode mode)
 {
-    if (mode == PAD_TRIG && !pad->note_held && !pad->cc_held && !pad->gate_held) {
+    if (mode == PAD_TRIG && !pad->gate_held) {
         pad_stop(pad);
     }
 }

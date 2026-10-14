@@ -1,15 +1,25 @@
 <div class="sampler16 {{cns}}">
-  <header mod-role="drag-handle"><strong>16 PADS</strong><span>WAV SAMPLER</span></header>
-  <div class="sampler16-connectors">
-    <span mod-role="input-midi-port" mod-port-symbol="events">MIDI</span>
-    <button type="button" mod-role="bypass">Bypass</button>
-    <span class="sampler16-bypass" mod-role="bypass-light"></span>
-    <span mod-role="output-audio-port" mod-port-symbol="left">L</span>
-    <span mod-role="output-audio-port" mod-port-symbol="right">R</span>
+  <header mod-role="drag-handle">
+    <strong>16 PADS</strong>
+    <div class="sampler16-meters" aria-label="Stereo output peak meter">
+      <div class="sampler16-meter-row"><span>L</span><div class="sampler16-meter" role="meter" aria-label="Left output dBFS" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" data-meter="level_l"><div class="sampler16-meter-fill"></div></div></div>
+      <div class="sampler16-meter-row"><span>R</span><div class="sampler16-meter" role="meter" aria-label="Right output dBFS" aria-valuemin="-60" aria-valuemax="0" aria-valuenow="-60" data-meter="level_r"><div class="sampler16-meter-fill"></div></div></div>
+    </div>
+    <span class="sampler16-subtitle">WAV SAMPLER</span>
+  </header>
+  <div class="mod-pedal-input">
+    <div class="mod-input mod-input-disconnected" title="MIDI input" aria-label="MIDI input" mod-role="input-midi-port" mod-port-symbol="events">
+      <div class="mod-pedal-input-image"></div>
+    </div>
+  </div>
+  <div class="mod-pedal-output">
+    <div class="mod-output mod-output-disconnected" title="Left audio output" aria-label="Left audio output" mod-role="output-audio-port" mod-port-symbol="left">
+      <div class="mod-pedal-output-image"></div>
+    </div>
+    <div class="mod-output mod-output-disconnected" title="Right audio output" aria-label="Right audio output" mod-role="output-audio-port" mod-port-symbol="right">
+      <div class="mod-pedal-output-image"></div>
+    </div>
   </div>
   <div class="sampler16-grid"></div>
   <div class="sampler16-status" role="status" aria-live="polite"></div>
-  <footer>Assign each pad's Trigger in MODEP settings (momentary mapping for Trig).<br>
-    Assign samples in MODEP settings when file properties are supported.<br>
-    Sample files must be available on the host.</footer>
 </div>

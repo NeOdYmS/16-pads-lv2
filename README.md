@@ -17,14 +17,27 @@ native LV2 UI binary**. The default bundle uses the host's generic controls.
 - **Gain:** -60 to +12 dB per pad, default 0 dB, visible **only in MODEP's
   configuration page**, not in the pad view. -60 dB is attenuation, not mute.
 - **MIDI mapping and sample assignments:** configured in MODEP's settings page,
-  not in the graphical pad view. No final MIDI note or CC assignments are built in.
+  not in the graphical pad view. Pads are triggered only through `triggerNN`
+  controls mapped with MODEP's native MIDI Learn; no MIDI assignment is built in.
 
-The pad view shows 16 playable pad buttons, mode selectors, and assigned sample
-names. Loop pads blink until the next trigger stops them; Trig pads blink until
+The pad view shows 16 square, rubber-style playable pads with their numbers at
+the bottom right, mode selectors, and assigned sample names. Empty pads have no
+sample placeholder and there is no help footer. Loop pads blink until the next trigger stops them; Trig pads blink until
 all held trigger sources are released (even if the sample has reached its end).
 Feedback comes from monitored LV2 output controls, so raw MIDI and MODEP-mapped
 triggers update the same indicators. One-shot playback is indicated without
 blinking. Reduced-motion browser preferences disable the animation.
+
+MIDI assignment and the host's bypass control stay in MODEP settings rather
+than the pad facade. Pedalboard jacks use MOD-UI's standard
+`mod-pedal-input`/`mod-pedal-output` markup and native jack artwork: MIDI in on
+the left edge and L/R audio out on the right edge, vertically centred on the
+pad grid.
+A horizontal stereo output meter shows L/R peak levels from -60 to 0 dBFS,
+with a red overload border at 0 dBFS or above. The DSP reports up to +36 dBFS
+without limiting the audio, with immediate attack and a 300 ms peak decay.
+These are peak meters, not calibrated analog VU/RMS meters; monitoring depends
+on the host delivering the `level_l` and `level_r` output controls.
 
 ## Build and tests
 
@@ -113,14 +126,12 @@ the mapping itself is stored by MODEP. Control-port gates are observed at
 audio-block boundaries. Which MIDI sources (notes versus CCs) MODEP can learn
 depends on its version.
 
-For hosts/controllers that route raw MIDI to the plugin, optional `noteNN` and
-`ccNN` settings provide direct assignments in the same generic settings panel.
-Both default to **-1 (disabled)**. Raw MIDI is omni-channel and velocity-sensitive
-for notes; velocity-zero note-on is note-off. A mapped CC rising across 64
-triggers at full velocity; falling below 64 releases. Repeated high CC values
-do not trigger repeatedly. MIDI CC 120/123 are reserved as global all-sound-off.
-Multiple pads can share an assignment. Reassigning a held note/CC clears its
-held state so Trig cannot get stuck.
+Since 0.0.10 the plugin has no `noteNN`/`ccNN` settings: MIDI-to-pad mapping
+is done exclusively by MODEP on the `triggerNN` ports (70 LV2 ports in total).
+Raw MIDI received on the events input does not trigger pads; only CC 120/123
+(all-sound-off/all-notes-off, any channel) are honoured as a global panic.
+Pedalboards saved with older versions keep their trigger/mode/gain/sample
+values (saved by symbol); stale `noteNN`/`ccNN` values are ignored.
 
 ### Sample file properties and compatibility
 
@@ -132,7 +143,7 @@ https://github.com/NeOdYmS/16-pads-lv2#sampler:sample01
 https://github.com/NeOdYmS/16-pads-lv2#sampler:sample16
 ```
 
-They use `atom:Path` and MOD's `mod:fileTypes "audiosample,audioloop"` hint.
+They use `atom:Path` and MOD's `mod:fileTypes "audiotrack"` hint.
 Modern MOD-derived hosts can expose file selectors for these parameters in
 their settings. **The exact MODEP installation has not been inspected; file
 picker support is not guaranteed.** The hint can list formats the host knows
@@ -163,9 +174,12 @@ selection, and gains stay in the host's settings. A regular GTK/Qt/X11 LV2 UI
 would not run inside MODEP's web frontend; a browser skin needs no separate
 aarch64 GUI binary.
 
-The skin has been exercised in a **local callback simulator**, not in MODEP.
-It remains opt-in until tested against the target MOD frontend. It does not
-include MOD catalogue screenshot/thumbnail assets. Disable it with
+The skin has been exercised in a **local callback simulator**. It remains
+opt-in until interactive playback is tested against the target MOD frontend.
+The bundle includes a separate `modgui.ttl`, referenced by `manifest.ttl`, and
+MOD catalogue screenshot/thumbnail PNGs captured from the local callback render.
+These previews are not screenshots of a Pi and do not prove MODEP compatibility.
+Disable it with
 `make ENABLE_MOD_GUI=0` if the host cannot render it; all controls and sample
 properties remain available. Depending on the host, a rescan/reload may be
 needed after changing bundle metadata.
@@ -179,6 +193,78 @@ python3 -m http.server 8765 --bind 127.0.0.1
 
 This preview simulates callbacks only: it produces no audio and proves neither
 MODEP integration nor target-device performance.
+
+### Catalogue previews and GUI troubleshooting
+
+MOD's GUI specification requires `modgui:screenshot` and `modgui:thumbnail`.
+Without them, MOD-UI's details page can display its "NO INTERFACE AVAILABLE"
+fallback image even when a GUI resources directory is discovered. That catalogue
+message does not itself establish whether the pedalboard's HTML interface works.
+Both asset paths must be declared and resolve to readable files.
+
+The first Pi check, reported from the target session, found Debian 13 with
+`modep-mod-ui 1.13.0-4` and `modep-mod-host 1.13.0-3`: the initial binary loaded
+and its LV2 descriptor/Worker/State interfaces were present, but the catalogue
+returned empty screenshot and thumbnail paths. Version 0.0.2 adds those assets,
+author/homepage metadata, and an explicit manifest reference to `modgui.ttl`.
+The correction still needs interactive verification on that target.
+
+After copying the **whole** corrected bundle, rescan/reload MOD-UI using the
+target's actual service procedure (restarts can interrupt audio), then hard
+refresh the browser. Check that `/effect/list` returns non-empty GUI image
+paths, and the plugin details endpoint `/effect/get?uri=...` resolves the
+icon template, stylesheet, JavaScript, and monitored outputs. In browser
+developer tools, ensure the image, CSS, and script requests succeed. Add the
+plugin to a pedalboard to test the actual interactive GUI, MIDI feedback,
+Loop/Trig blinking, and host configuration file pickers. A catalogue image
+alone is not a playback test.
+
+The target subsequently displayed the 0.0.6 GUI but reported a collapsing
+46px-wide panel. MOD-UI measures the child content width and repeatedly applies
+it to the enclosing icon. A percentage maximum width on our padded,
+border-box root fed those reductions back into the next measurement.
+Version 0.0.7 fixes the root at 640px, leaving board scaling to MODEP.
+The browser regression reproduces repeated host measurements inside a narrow,
+zoomed wrapper; this correction still needs a Pi retest. Check that the panel
+remains stable after adding it, zooming, and receiving meter updates, without
+editing the saved pedalboard.
+
+Sample selectors in MODEP settings are not a filesystem browser. MOD-UI fills
+each `custom-select-path` list from `/files/list?types=audiotrack`, which only
+scans `$MOD_USER_FILES_DIR/Audio Tracks` recursively (default
+`/data/user-files`; MODEP observed `/var/modep/user-files`), so nested folders
+such as `Audio Tracks/Samples` are included. Version 0.0.9 switched from
+`audiosample,audioloop` (`Audio Samples`/`Audio Loops`) at the user's request.
+Already saved sample paths elsewhere still load from state. If the folder is
+missing or empty,
+the list is empty and clicking appears to do nothing. Copy `.wav` files there,
+then reopen the settings. The list may also
+show other audio formats; this plugin only decodes WAV and reports an error,
+keeping the previous sample, for anything else.
+
+Folder navigation depends on the MOD-UI version, not on plugin metadata.
+MOD-UI up to 1.13 (including MODEP's `modep-mod-ui 1.13.0-x`) scans subfolders
+recursively but returns a flat list of file basenames with no folder entries,
+so files with the same name in different folders are indistinguishable.
+MOD-UI 1.14 (upstream commit `d6653b7f`, September 2026) added the hierarchical
+picker: `/files/list` gains `dirname`/`basepath` fields and the native selector
+shows navigable folders. The same `atom:Path` + `mod:fileTypes` metadata works
+with both; on 1.13, use unique, prefixed file names (for example
+`Kit1 - Kick.wav`) until MODEP ships MOD-UI 1.14 or later.
+
+To regenerate catalogue assets after changing the skin, optional Playwright
+tooling can be installed under the ignored build directory:
+
+```sh
+npm install --prefix build/gui-tools --no-audit --no-fund playwright
+build/gui-tools/node_modules/.bin/playwright install chromium
+PLAYWRIGHT_MODULE="$PWD/build/gui-tools/node_modules/playwright" node tools/capture_gui.js
+```
+
+The capture tool needs no server and leaves no running browser. It renders
+the MOD callback locally and writes `modgui/screenshot.png` plus a proportional
+thumbnail of at most 256x64 pixels. These checked-in assets need no browser
+dependency at build time or on MODEP.
 
 ## Implementation limits
 
@@ -207,8 +293,9 @@ Restore is transactional on load failure and must happen with audio suspended
 (the plugin does not advertise `state:threadSafeRestore`).
 
 The implementation has passed native tests and generated a Linux aarch64 ELF
-shared library. That confirms build/ABI feasibility, **not execution on the
-user's Pi or compatibility with an uninspected MODEP release**.
+shared library. The target session has also reported successful library loading
+and descriptor discovery on the Pi. These checks do **not** verify audio
+playback, GUI integration, or performance on the user's MODEP installation.
 
 ## Conventions consulted
 
@@ -224,3 +311,50 @@ For full RDF validation, install `lv2_validate` / `sord_validate` and include
 the MOD `mod.ttl` and `modgui.ttl` vocabularies along with generated bundle files.
 Without those vocabularies, a general LV2 validator reports MOD properties as
 undefined even though they are defined by the MOD extension.
+
+## Preparing a PatchStorage release
+
+The intended distribution platform is
+[PatchStorage LV2 Plugins](https://patchstorage.com/platform/lv2-plugins/).
+Nothing has been published. The current project is **not release-ready**:
+there is no repository licence yet, and target MODEP integration must be
+confirmed before describing it as compatible.
+
+Before distributing:
+
+1. Have the copyright holder choose a licence and add its full text as
+   `LICENSE`. Add the corresponding `doap:license` URI to generated LV2
+   metadata. Do not assume the public repository grants redistribution rights.
+2. Record the tested Pi model, Linux architecture/glibc version, MODEP version,
+   and whether file selectors, MIDI Learn, and monitored pad feedback work.
+   Run the playback and state-persistence checks described above.
+3. Build a fresh Linux aarch64 bundle in a separate output directory. Select
+   the web skin only after validating it on that MODEP version. Do not reuse
+   the macOS bundle, sanitizer binaries, or an older staging directory.
+4. Capture the actual MODEP pad view and configuration page. Show sample
+   selection, MIDI assignment, and the gain range without exposing private
+   filenames or device information. Label simulator screenshots as simulations
+   if used; they are not evidence of target compatibility.
+5. Archive the complete `16-pads.lv2/` directory with `README.md` and `LICENSE`.
+   Include only `sampler.so`, `manifest.ttl`, `sampler.ttl`, optional `modgui.ttl`, and the referenced
+   MOD GUI assets inside the bundle. Exclude build caches, test fixtures,
+   preview tools, and samples unless their redistribution rights are explicit.
+   Check extraction, architecture, and plugin discovery from the archive.
+6. Name the release with an explicit version and architecture, provide its
+   SHA-256 checksum, and link the matching source revision and build commands.
+   Installation instructions must identify the host's real LV2 search path,
+   not assume the SSH account's home directory is used by MODEP.
+
+Suggested listing description, to finalize after target verification:
+
+> 16 Pads is an LV2 WAV sampler with an MPC-inspired optional MOD web interface.
+> Sixteen pads can play simultaneously, with one voice per pad and independent
+> One-shot, Loop, and held-trigger playback. Pressing a playing pad stops it.
+> MIDI assignment, sample selection, and per-pad gain (-60 to +12 dB) are
+> configured in the host settings. Loop and Trig pads provide blinking feedback
+> through supported MOD frontends. This download targets Linux aarch64; see the
+> included instructions for tested hosts, WAV formats, and limitations.
+
+Use the README's format/memory/headroom limitations in the listing and state
+the verified compatibility scope. Publication, uploading assets, and choosing
+a licence require separate authorization from the owner.

@@ -12,6 +12,14 @@ function (event, jsFuncs) {
         button.classList.toggle("sampler16-blinking", active && (mode === 1 || mode === 2));
     }
     function setControl(symbol, value) {
+        var meter = root.querySelector('[data-meter="' + symbol + '"]');
+        if (meter && Number.isFinite(Number(value))) {
+            var db = Math.max(-60, Math.min(0, Number(value)));
+            meter.querySelector(".sampler16-meter-fill").style.width = ((db + 60) / 60 * 100) + "%";
+            meter.setAttribute("aria-valuenow", db);
+            meter.setAttribute("aria-valuetext", Number(value).toFixed(1) + " dBFS");
+            meter.classList.toggle("sampler16-meter-clip", Number(value) >= 0);
+        }
         var control = root.querySelector('[data-port="' + symbol + '"]');
         if (control) { control.value = value; }
         var trigger = root.querySelector('[data-trigger="' + symbol + '"]');
@@ -34,7 +42,7 @@ function (event, jsFuncs) {
         var sample = root.querySelector('[data-sample="' + parameter.uri + '"]');
         if (sample) {
             sample.textContent = parameter.value ?
-                parameter.value.split(/[\\/]/).pop() : "No sample";
+                parameter.value.split(/[\\/]/).pop() : "";
             sample.title = parameter.value || "";
         }
     }
@@ -78,7 +86,10 @@ function (event, jsFuncs) {
             heading.className = "sampler16-hit";
             heading.setAttribute("data-trigger", "trigger" + suffix);
             heading.setAttribute("aria-label", "Trigger pad " + suffix);
-            heading.textContent = "PAD " + suffix;
+            var number = document.createElement("span");
+            number.className = "sampler16-number";
+            number.textContent = suffix;
+            heading.appendChild(number);
             bindTrigger(heading);
             card.appendChild(heading);
             var mode = document.createElement("select");
@@ -97,7 +108,7 @@ function (event, jsFuncs) {
             var sample = document.createElement("span");
             sample.className = "sampler16-sample";
             sample.setAttribute("data-sample", uri + ":sample" + suffix);
-            sample.textContent = "No sample";
+            sample.textContent = "";
             card.appendChild(sample);
             grid.appendChild(card);
             mode.addEventListener("change", function (event) {
@@ -127,9 +138,6 @@ function (event, jsFuncs) {
             setControl(event.symbol, event.value);
         } else if (event.uri) {
             setParameter(event);
-            if (event.uri !== uri + ":error") {
-                status.textContent = "Sample assignment updated by host.";
-            }
         }
     }
 }

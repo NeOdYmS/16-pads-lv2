@@ -21,8 +21,6 @@ typedef struct {
     double position;
     float velocity;
     int playing;
-    int note_held;
-    int cc_held;
     int gate_held;
 } Pad;
 
@@ -34,7 +32,6 @@ int pad_active(const Pad* pad);
 void pad_release(Pad* pad, PadMode mode);
 void pad_render(Pad* pad, PadMode mode, float gain, double host_rate,
                 float* left, float* right, uint32_t start, uint32_t end);
-int midi_assignment(float value);
 PadMode pad_mode(float value);
 float pad_gain(float value);
 

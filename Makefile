@@ -20,7 +20,7 @@ $(BUNDLE)/sampler.so: src/plugin.c src/sampler.c src/sampler.h | $(BUNDLE)
 	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -fPIC -shared \
 		$$LV2_FLAGS src/plugin.c src/sampler.c -lm -o $@
 
-$(BUNDLE)/manifest.ttl: tools/metadata.py modgui/icon.html modgui/style.css modgui/script.js FORCE | $(BUNDLE)
+$(BUNDLE)/manifest.ttl: tools/metadata.py modgui/icon.html modgui/style.css modgui/script.js modgui/screenshot.png modgui/thumbnail.png FORCE | $(BUNDLE)
 	$(PYTHON) tools/metadata.py $(BUNDLE) --mod-gui $(ENABLE_MOD_GUI)
 
 build/test_sampler: tests/test_sampler.c src/sampler.c src/sampler.h
@@ -49,4 +49,4 @@ install: all
 
 clean:
 	rm -f build/test_sampler build/test_plugin "$(BUNDLE)/sampler.so" \
-		"$(BUNDLE)/manifest.ttl" "$(BUNDLE)/sampler.ttl"
+		"$(BUNDLE)/manifest.ttl" "$(BUNDLE)/sampler.ttl" "$(BUNDLE)/modgui.ttl"

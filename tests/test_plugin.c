@@ -204,21 +204,21 @@ int main(void)
     assert(host.plugin);
     Plugin* plugin = host.plugin;
     Buffer input = {0}, output = {0};
-    float left[32], right[32], controls[PAD_COUNT][5];
+    float left[32], right[32], controls[PAD_COUNT][CONTROL_COUNT] = {{0}};
     float activity[PAD_COUNT] = {0};
+    float meters[2] = {0};
     connect_port(plugin, 0, input.bytes);
     connect_port(plugin, 1, output.bytes);
     connect_port(plugin, 2, left);
     connect_port(plugin, 3, right);
+    assert(METER_PORT == 68);
+    connect_port(plugin, 68, &meters[0]);
+    connect_port(plugin, 69, &meters[1]);
     for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
-        controls[pad][0] = 0;
-        controls[pad][1] = controls[pad][2] = -1;
-        controls[pad][3] = 0;
-        controls[pad][4] = 0;
-        for (unsigned parameter = 0; parameter < 5; ++parameter) {
-            connect_port(plugin, 4 + pad * 6 + parameter, &controls[pad][parameter]);
+        for (unsigned parameter = 0; parameter < CONTROL_COUNT; ++parameter) {
+            connect_port(plugin, 4 + pad * 4 + parameter, &controls[pad][parameter]);
         }
-        connect_port(plugin, 4 + pad * 6 + 5, &activity[pad]);
+        connect_port(plugin, 4 + pad * 4 + 3, &activity[pad]);
     }
     activate(plugin);
     fixture();
@@ -228,96 +228,93 @@ int main(void)
     empty(&input, &mapper);
     pump(&host);
     assert(plugin->pads[0].sample && !plugin->pending[0]);
+    /* Raw MIDI notes/CCs no longer trigger pads; MODEP maps trigger ports. */
     const uint8_t on[] = {0x90, 60, 127}, off[] = {0x80, 60, 0};
+    const uint8_t cc_on[] = {0xb0, 21, 127};
     midi_block(&input, &mapper, plugin, 2, on, 5, off);
     block(&host, &output, 16);
-    near(left[2], 0); /* No final MIDI assignments are built in. */
-    controls[0][1] = 60;
-    midi_block(&input, &mapper, plugin, 2, on, 5, off);
+    near(left[2], 0);
+    midi_block(&input, &mapper, plugin, 2, cc_on, 0, NULL);
     block(&host, &output, 16);
-    near(left[1], 0);
-    near(left[2], 0.5f);
-    near(left[8], 0.5f); /* One-shot ignores release. */
-    near(left[10], 0);
+    near(left[2], 0);
+    near(activity[0], 0);
+    empty(&input, &mapper);
 
-    controls[0][0] = PAD_TRIG;
-    midi_block(&input, &mapper, plugin, 2, on, 5, off);
+    controls[0][CONTROL_MODE] = PAD_ONE_SHOT;
+    controls[0][CONTROL_TRIGGER] = 1;
+    block(&host, &output, 4);
+    near(left[0], 0.5f);
+    controls[0][CONTROL_TRIGGER] = 0;
     block(&host, &output, 16);
-    near(left[4], 0.5f);
-    near(left[5], 0);
-    const uint8_t zero[] = {0x90, 60, 0};
-    midi_block(&input, &mapper, plugin, 0, on, 3, zero);
-    block(&host, &output, 16);
-    near(left[2], 0.5f);
-    near(left[3], 0);
+    near(left[3], 0.5f); /* One-shot ignores release. */
+    near(left[4], 0);
 
-    controls[0][0] = PAD_LOOP;
-    midi_block(&input, &mapper, plugin, 0, on, 3, off);
+    controls[0][CONTROL_MODE] = PAD_TRIG;
+    controls[0][CONTROL_TRIGGER] = 1;
+    block(&host, &output, 4);
+    near(left[0], 0.5f);
+    near(activity[0], 1);
+    controls[0][CONTROL_TRIGGER] = 0;
+    block(&host, &output, 4);
+    near(left[0], 0);
+    near(activity[0], 0);
+    controls[0][CONTROL_TRIGGER] = 1;
+    block(&host, &output, 16);
+    near(left[15], 0);
+    near(activity[0], 1); /* Trig blinks until release, even after sample end. */
+    controls[0][CONTROL_TRIGGER] = 0;
+    block(&host, &output, 4);
+    near(activity[0], 0);
+
+    controls[0][CONTROL_MODE] = PAD_LOOP;
+    controls[0][CONTROL_TRIGGER] = 1;
     block(&host, &output, 16);
     near(left[15], 0.5f);
     near(activity[0], 1);
+    controls[0][CONTROL_TRIGGER] = 0;
+    block(&host, &output, 16);
+    near(left[15], 0.5f);
+    near(activity[0], 1);
+    controls[0][CONTROL_TRIGGER] = 1;
+    block(&host, &output, 16);
+    near(left[0], 0); /* Retrigger stops without restarting. */
+    near(activity[0], 0);
+    controls[0][CONTROL_TRIGGER] = 0;
+    block(&host, &output, 4);
+
+    /* CC 123 remains a sample-accurate global panic. */
+    controls[0][CONTROL_TRIGGER] = 1;
+    block(&host, &output, 16);
+    controls[0][CONTROL_TRIGGER] = 0;
     const uint8_t panic[] = {0xb0, 123, 0};
     midi_block(&input, &mapper, plugin, 3, panic, 0, NULL);
     block(&host, &output, 16);
     near(left[2], 0.5f);
     near(left[3], 0);
     near(activity[0], 0);
-    controls[0][0] = PAD_TRIG;
-    controls[0][2] = 21;
-    const uint8_t cc_on[] = {0xb0, 21, 64}, cc_off[] = {0xb0, 21, 0};
-    midi_block(&input, &mapper, plugin, 1, cc_on, 4, cc_off);
-    block(&host, &output, 16);
-    near(left[0], 0);
-    near(left[1], 0.5f);
-    near(left[4], 0);
-
-    /* MODEP's MIDI mapping drives gate controls without internal note/CC maps. */
-    controls[0][1] = controls[0][2] = -1;
-    controls[0][4] = 1;
     empty(&input, &mapper);
-    block(&host, &output, 4);
-    near(left[0], 0.5f);
-    near(activity[0], 1);
-    controls[0][4] = 0;
-    block(&host, &output, 4);
-    near(left[0], 0);
-    near(activity[0], 0);
-    controls[0][4] = 1;
-    block(&host, &output, 16);
-    near(left[15], 0);
-    near(activity[0], 1); /* Trig blinks until release, even after sample end. */
-    controls[0][4] = 0;
-    block(&host, &output, 4);
-    near(activity[0], 0);
-    controls[0][0] = PAD_LOOP;
-    controls[0][4] = 1;
-    block(&host, &output, 16);
-    near(left[15], 0.5f);
-    near(activity[0], 1);
-    controls[0][4] = 0;
-    block(&host, &output, 16);
-    near(left[15], 0.5f);
-    near(activity[0], 1);
-    controls[0][4] = 1;
-    block(&host, &output, 16);
-    near(left[0], 0);
-    near(activity[0], 0);
-    controls[0][4] = 0;
     activate(plugin);
-    controls[0][1] = 60;
 
     /* All sixteen independent voices can run at once. */
     for (unsigned pad = 1; pad < PAD_COUNT; ++pad) {
         patch(&input, &mapper, plugin, pad, "build/test-plugin.wav");
         block(&host, &output, 16);
         pump(&host);
-        controls[pad][1] = 60;
     }
-    controls[0][0] = PAD_ONE_SHOT;
-    midi_block(&input, &mapper, plugin, 0, on, 0, NULL);
+    empty(&input, &mapper);
+    controls[0][CONTROL_MODE] = PAD_ONE_SHOT;
+    for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
+        controls[pad][CONTROL_TRIGGER] = 1;
+    }
     block(&host, &output, 16);
     near(left[0], 8);
     near(right[0], 8);
+    near(meters[0], 20 * log10f(8));
+    near(meters[1], meters[0]);
+    for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
+        controls[pad][CONTROL_TRIGGER] = 0;
+    }
+    block(&host, &output, 16);
 
     Sample* previous = plugin->pads[0].sample;
     patch(&input, &mapper, plugin, 0, "build/no-such-file.wav");
@@ -385,6 +382,23 @@ int main(void)
     }
     block(&host, &output, 16);
     pump(&host);
+    activate(plugin);
+    empty(&input, &mapper);
+    block(&host, &output, 16);
+    near(meters[0], -60);
+    near(meters[1], -60);
+    float stereo_audio[] = {0.5f, 0.25f, 0.5f, 0.25f};
+    Sample stereo = {stereo_audio, 2, 48000, 2};
+    Sample* retained = plugin->pads[0].sample;
+    plugin->pads[0].sample = &stereo;
+    pad_trigger(&plugin->pads[0], 1);
+    block(&host, &output, 16);
+    near(meters[0], 20 * log10f(0.5f));
+    near(meters[1], 20 * log10f(0.25f));
+    const float previous_level = meters[0];
+    block(&host, &output, 16);
+    assert(meters[0] < previous_level && meters[0] > -60);
+    plugin->pads[0].sample = retained;
     cleanup(plugin);
     assert(!remove("build/test-plugin.wav"));
     puts("LV2 host harness tests passed");

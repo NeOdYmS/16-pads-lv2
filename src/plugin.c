@@ -48,16 +48,16 @@ typedef struct {
     LV2_Atom_Sequence* notify;
     float* left;
     float* right;
-    const float* controls[PAD_COUNT][5];
+    const float* controls[PAD_COUNT][3];
     float* activity[PAD_COUNT];
+    float* meters[2];
+    float peaks[2];
     double rate;
     LV2_Worker_Schedule* worker;
     LV2_Log_Log* log;
     LV2_Atom_Forge forge;
     URIs uris;
     Pad pads[PAD_COUNT];
-    uint16_t notes[PAD_COUNT], ccs[PAD_COUNT];
-    int previous_note[PAD_COUNT], previous_cc[PAD_COUNT];
     PadMode previous_mode[PAD_COUNT];
     int previous_gate[PAD_COUNT];
     char paths[PAD_COUNT][PATH_CAPACITY];
@@ -106,9 +106,15 @@ static void report(Plugin* self, const char* message)
     }
 }
 
+/* Per-pad input controls, in port order. */
+enum { CONTROL_MODE, CONTROL_GAIN, CONTROL_TRIGGER, CONTROL_COUNT };
+#define PAD_PORT_BASE 4
+#define PAD_PORT_STRIDE (CONTROL_COUNT + 1)
+#define METER_PORT (PAD_PORT_BASE + PAD_COUNT * PAD_PORT_STRIDE)
+
 static float control(const Plugin* self, unsigned pad, unsigned parameter)
 {
-    static const float defaults[] = {0, -1, -1, 0, 0};
+    static const float defaults[CONTROL_COUNT] = {0, 0, 0};
     return self->controls[pad][parameter] ?
            *self->controls[pad][parameter] : defaults[parameter];
 }
@@ -116,9 +122,7 @@ static float control(const Plugin* self, unsigned pad, unsigned parameter)
 static void stop_pad(Plugin* self, unsigned pad)
 {
     pad_stop(&self->pads[pad]);
-    self->pads[pad].note_held = self->pads[pad].cc_held = 0;
     self->pads[pad].gate_held = 0;
-    self->notes[pad] = self->ccs[pad] = 0;
 }
 
 static LV2_Handle instantiate(const LV2_Descriptor* descriptor, double rate,
@@ -166,7 +170,6 @@ static LV2_Handle instantiate(const LV2_Descriptor* descriptor, double rate,
         char uri[160];
         snprintf(uri, sizeof(uri), SAMPLER_URI ":sample%02u", pad + 1);
         self->uris.sample[pad] = map->map(map->handle, uri);
-        self->previous_note[pad] = self->previous_cc[pad] = -1;
         atomic_init(&self->path_version[pad], 0);
         atomic_init(&self->worker_failed[pad], 0);
         for (unsigned i = 0; i < PATH_CAPACITY; ++i) {
@@ -192,11 +195,13 @@ static void connect_port(LV2_Handle instance, uint32_t port, void* data)
     case 1: self->notify = data; break;
     case 2: self->left = data; break;
     case 3: self->right = data; break;
+    case METER_PORT: self->meters[0] = data; break;
+    case METER_PORT + 1: self->meters[1] = data; break;
     default:
-        if (port < 4 + PAD_COUNT * 6) {
-            const unsigned pad = (port - 4) / 6;
-            const unsigned parameter = (port - 4) % 6;
-            if (parameter == 5) {
+        if (port >= PAD_PORT_BASE && port < METER_PORT) {
+            const unsigned pad = (port - PAD_PORT_BASE) / PAD_PORT_STRIDE;
+            const unsigned parameter = (port - PAD_PORT_BASE) % PAD_PORT_STRIDE;
+            if (parameter == CONTROL_COUNT) {
                 self->activity[pad] = data;
             } else {
                 self->controls[pad][parameter] = data;
@@ -208,6 +213,7 @@ static void connect_port(LV2_Handle instance, uint32_t port, void* data)
 static void activate(LV2_Handle instance)
 {
     Plugin* self = instance;
+    self->peaks[0] = self->peaks[1] = 0;
     for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
         stop_pad(self, pad);
         self->previous_gate[pad] = 0;
@@ -217,51 +223,22 @@ static void activate(LV2_Handle instance)
 static void render(Plugin* self, uint32_t start, uint32_t end)
 {
     for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
-        pad_render(&self->pads[pad], pad_mode(control(self, pad, 0)),
-                   pad_gain(control(self, pad, 3)), self->rate,
+        pad_render(&self->pads[pad], pad_mode(control(self, pad, CONTROL_MODE)),
+                   pad_gain(control(self, pad, CONTROL_GAIN)), self->rate,
                    self->left, self->right, start, end);
     }
 }
 
+/* Pad triggers come from host-mapped control ports (MODEP MIDI Learn); raw
+   MIDI is only used for the standard all-sound-off/all-notes-off panic. */
 static void midi(Plugin* self, const uint8_t* bytes, uint32_t size)
 {
     if (size != 3 || bytes[1] > 127 || bytes[2] > 127) {
         return;
     }
-    const unsigned type = bytes[0] & 0xf0;
-    const uint16_t channel = (uint16_t)(1u << (bytes[0] & 15));
-    if (type == 0xb0 && (bytes[1] == 120 || bytes[1] == 123)) {
+    if ((bytes[0] & 0xf0) == 0xb0 && (bytes[1] == 120 || bytes[1] == 123)) {
         for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
             stop_pad(self, pad);
-        }
-        return;
-    }
-    for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
-        Pad* voice = &self->pads[pad];
-        const PadMode mode = pad_mode(control(self, pad, 0));
-        if ((type == 0x80 || type == 0x90) &&
-            midi_assignment(control(self, pad, 1)) == bytes[1]) {
-            if (type == 0x90 && bytes[2]) {
-                self->notes[pad] |= channel;
-                voice->note_held = 1;
-                pad_trigger(voice, bytes[2] / 127.0f);
-            } else {
-                self->notes[pad] &= (uint16_t)~channel;
-                voice->note_held = self->notes[pad] != 0;
-                pad_release(voice, mode);
-            }
-        } else if (type == 0xb0 &&
-                   midi_assignment(control(self, pad, 2)) == bytes[1]) {
-            if (bytes[2] >= 64) {
-                if (!(self->ccs[pad] & channel)) {
-                    pad_trigger(voice, 1);
-                }
-                self->ccs[pad] |= channel;
-            } else {
-                self->ccs[pad] &= (uint16_t)~channel;
-            }
-            voice->cc_held = self->ccs[pad] != 0;
-            pad_release(voice, mode);
         }
     }
 }
@@ -399,23 +376,13 @@ static void run(LV2_Handle instance, uint32_t frames)
                      "Pad %02u: host rejected worker response; retry sample selection",
                      pad + 1);
         }
-        const int note = midi_assignment(control(self, pad, 1));
-        const int cc = midi_assignment(control(self, pad, 2));
-        const PadMode mode = pad_mode(control(self, pad, 0));
-        const float gate_value = control(self, pad, 4);
+        const PadMode mode = pad_mode(control(self, pad, CONTROL_MODE));
+        const float gate_value = control(self, pad, CONTROL_TRIGGER);
         const int gate = isfinite(gate_value) && gate_value >= 0.5f;
         const int entering_trig = mode == PAD_TRIG &&
                                   self->previous_mode[pad] != PAD_TRIG;
         if (entering_trig) {
             stop_pad(self, pad);
-        }
-        if (note != self->previous_note[pad]) {
-            self->notes[pad] = 0;
-            self->pads[pad].note_held = 0;
-        }
-        if (cc != self->previous_cc[pad]) {
-            self->ccs[pad] = 0;
-            self->pads[pad].cc_held = 0;
         }
         self->pads[pad].gate_held = gate;
         if (gate && (!self->previous_gate[pad] || entering_trig)) {
@@ -423,8 +390,6 @@ static void run(LV2_Handle instance, uint32_t frames)
         }
         pad_release(&self->pads[pad], mode);
         self->previous_gate[pad] = gate;
-        self->previous_note[pad] = note;
-        self->previous_cc[pad] = cc;
         self->previous_mode[pad] = mode;
     }
     uint32_t cursor = 0;
@@ -460,11 +425,24 @@ static void run(LV2_Handle instance, uint32_t frames)
     }
     render(self, cursor, frames);
     schedule(self);
+    const float decay = (float)exp(-(double)frames / (self->rate * 0.3));
+    for (unsigned channel = 0; channel < 2; ++channel) {
+        const float* audio = channel ? self->right : self->left;
+        float peak = 0;
+        for (uint32_t frame = 0; frame < frames; ++frame) {
+            peak = fmaxf(peak, fabsf(audio[frame]));
+        }
+        self->peaks[channel] = fmaxf(peak, self->peaks[channel] * decay);
+        if (self->meters[channel]) {
+            *self->meters[channel] = self->peaks[channel] > 0.000001f ?
+                fminf(36, fmaxf(-60, 20 * log10f(self->peaks[channel]))) : -60;
+        }
+    }
     for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
         if (self->activity[pad]) {
             const Pad* voice = &self->pads[pad];
-            const int held = voice->note_held || voice->cc_held || voice->gate_held;
-            *self->activity[pad] = pad_mode(control(self, pad, 0)) == PAD_TRIG ?
+            const int held = voice->gate_held;
+            *self->activity[pad] = pad_mode(control(self, pad, CONTROL_MODE)) == PAD_TRIG ?
                                    (float)held : (float)voice->playing;
         }
     }

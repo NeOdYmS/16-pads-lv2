@@ -40,14 +40,10 @@ static void playback(void)
     near((float)pad.position, 0);
     assert(pad_active(&pad) == 1);
 
-    pad.note_held = 1;
+    pad.gate_held = 1;
     pad_release(&pad, PAD_TRIG);
     assert(pad_active(&pad));
-    pad.note_held = 0;
-    pad.cc_held = 1;
-    pad_release(&pad, PAD_TRIG);
-    assert(pad_active(&pad));
-    pad.cc_held = 0;
+    pad.gate_held = 0;
     pad_release(&pad, PAD_TRIG);
     assert(!pad_active(&pad));
     pad_trigger(&pad, 1);
@@ -105,7 +101,7 @@ static void stop_on_retrigger(void)
     pad_trigger(&pad, 1);
     assert(pad_active(&pad) == 1);
     pad_stop(&pad);
-    pad.note_held = 1;
+    pad.gate_held = 1;
     pad_trigger(&pad, 1);
     pad_trigger(&pad, 1);
     assert(!pad_active(&pad));
@@ -113,7 +109,7 @@ static void stop_on_retrigger(void)
     assert(pad_active(&pad) == 1);
     pad_release(&pad, PAD_TRIG);
     assert(pad_active(&pad) == 1);
-    pad.note_held = 0;
+    pad.gate_held = 0;
     pad_release(&pad, PAD_TRIG);
     assert(!pad_active(&pad));
 }
@@ -206,10 +202,6 @@ int main(void)
     playback();
     stop_on_retrigger();
     decoder();
-    assert(midi_assignment(-1) == -1);
-    assert(midi_assignment(NAN) == -1);
-    assert(midi_assignment(128) == -1);
-    assert(midi_assignment(60) == 60);
     assert(pad_mode(0) == PAD_ONE_SHOT);
     assert(pad_mode(1) == PAD_LOOP);
     assert(pad_mode(2) == PAD_TRIG);
