@@ -29,6 +29,24 @@ static Sample* fail(FILE* file, Sample* sample, char* error, size_t size,
     return NULL;
 }
 
+/* Drop near-silent frames (< -72 dBFS) before the first transient so pads
+   sound immediately; fully silent samples are kept unchanged. */
+static void trim_leading_silence(Sample* sample)
+{
+    const size_t total = (size_t)sample->frames * sample->channels;
+    size_t first = 0;
+    while (first < total && fabsf(sample->data[first]) < SAMPLE_SILENCE) {
+        ++first;
+    }
+    first /= sample->channels;
+    if (first == 0 || first >= sample->frames) {
+        return;
+    }
+    memmove(sample->data, sample->data + first * sample->channels,
+            (total - first * sample->channels) * sizeof(float));
+    sample->frames -= (uint32_t)first;
+}
+
 Sample* sample_load(const char* path, char* error, size_t error_size)
 {
     FILE* file = fopen(path, "rb");
@@ -109,28 +127,36 @@ Sample* sample_load(const char* path, char* error, size_t error_size)
     if (!sample->data || fseek(file, data_offset, SEEK_SET)) {
         return fail(file, sample, error, error_size, "Cannot allocate/read sample");
     }
-    for (size_t i = 0; i < (size_t)frames * channels; ++i) {
-        unsigned char bytes[4] = {0};
-        if (fread(bytes, 1, bits / 8, file) != (size_t)(bits / 8)) {
+    const size_t width = bits / 8;
+    const size_t total = (size_t)frames * channels;
+    unsigned char chunk[4096 * 4];
+    const size_t chunk_values = sizeof(chunk) / width;
+    for (size_t i = 0; i < total;) {
+        const size_t count = total - i < chunk_values ? total - i : chunk_values;
+        if (fread(chunk, width, count, file) != count) {
             return fail(file, sample, error, error_size, "Truncated WAV data");
         }
-        float value;
-        if (format == 3) {
-            const uint32_t word = u32(bytes);
-            memcpy(&value, &word, sizeof(value));
-            if (!isfinite(value)) {
-                return fail(file, sample, error, error_size, "Non-finite WAV audio");
+        for (size_t j = 0; j < count; ++j, ++i) {
+            unsigned char bytes[4] = {0};
+            memcpy(bytes, chunk + j * width, width);
+            float value;
+            if (format == 3) {
+                const uint32_t word = u32(bytes);
+                memcpy(&value, &word, sizeof(value));
+                if (!isfinite(value)) {
+                    return fail(file, sample, error, error_size, "Non-finite WAV audio");
+                }
+                value = fminf(1.0f, fmaxf(-1.0f, value));
+            } else {
+                const uint32_t word = u32(bytes);
+                const double signed_value = (word & (1u << (bits - 1))) ?
+                    (double)word - ldexp(1.0, (int)bits) : (double)word;
+                value = (float)(signed_value / ldexp(1.0, (int)bits - 1));
             }
-            value = fminf(1.0f, fmaxf(-1.0f, value));
-        } else {
-            const uint32_t word = u32(bytes);
-            const unsigned width = bits;
-            const double signed_value = (word & (1u << (width - 1))) ?
-                (double)word - ldexp(1.0, (int)width) : (double)word;
-            value = (float)(signed_value / ldexp(1.0, (int)width - 1));
+            sample->data[i] = value;
         }
-        sample->data[i] = value;
     }
+    trim_leading_silence(sample);
     fclose(file);
     return sample;
 }
@@ -141,12 +167,6 @@ void sample_free(Sample* sample)
         free(sample->data);
         free(sample);
     }
-}
-
-int midi_assignment(float value)
-{
-    return isfinite(value) && value >= 0.0f && value <= 127.0f ?
-           (int)lroundf(value) : -1;
 }
 
 PadMode pad_mode(float value)
@@ -187,42 +207,91 @@ void pad_trigger(Pad* pad, float velocity)
 
 void pad_release(Pad* pad, PadMode mode)
 {
-    if (mode == PAD_TRIG && !pad->note_held && !pad->cc_held && !pad->gate_held) {
+    if (mode == PAD_TRIG && !pad->gate_held) {
         pad_stop(pad);
     }
+}
+
+static uint32_t render_direct(const Sample* sample, uint32_t index, float amplitude,
+                              float* left, float* right, uint32_t frame,
+                              uint32_t count)
+{
+    const float* data = sample->data + (size_t)index * sample->channels;
+    if (sample->channels == 1) {
+        for (uint32_t i = 0; i < count; ++i) {
+            const float value = data[i] * amplitude;
+            left[frame + i] += value;
+            right[frame + i] += value;
+        }
+    } else {
+        for (uint32_t i = 0; i < count; ++i) {
+            left[frame + i] += data[2 * i] * amplitude;
+            right[frame + i] += data[2 * i + 1] * amplitude;
+        }
+    }
+    return index + count;
 }
 
 void pad_render(Pad* pad, PadMode mode, float gain, double host_rate,
                 float* left, float* right, uint32_t start, uint32_t end)
 {
     const Sample* sample = pad->sample;
-    if (!sample) {
+    if (!sample || !pad->playing) {
         return;
     }
     const double step = sample->rate / host_rate;
-    for (uint32_t frame = start; frame < end && pad->playing; ++frame) {
-        if (pad->position >= sample->frames) {
-            if (mode == PAD_LOOP) {
-                pad->position = fmod(pad->position, sample->frames);
-            } else {
-                pad->playing = 0;
-                break;
+    const float amplitude = gain * pad->velocity;
+    const uint32_t frames = sample->frames;
+    const float* data = sample->data;
+    uint32_t frame = start;
+    if (step == 1.0 && pad->position == (double)(uint32_t)pad->position) {
+        /* Same rate as the host: copy whole runs without interpolation. */
+        uint32_t index = (uint32_t)pad->position;
+        while (frame < end) {
+            if (index >= frames) {
+                if (mode != PAD_LOOP) {
+                    pad->playing = 0;
+                    break;
+                }
+                index %= frames;
             }
+            const uint32_t count = end - frame < frames - index ?
+                                   end - frame : frames - index;
+            index = render_direct(sample, index, amplitude, left, right, frame, count);
+            frame += count;
         }
-        const uint32_t index = (uint32_t)pad->position;
-        const uint32_t next = index + 1 < sample->frames ? index + 1 :
-                              mode == PAD_LOOP ? 0 : index;
-        const float fraction = (float)(pad->position - index);
-        const float amplitude = gain * pad->velocity;
-        for (unsigned channel = 0; channel < 2; ++channel) {
-            const unsigned c = sample->channels == 1 ? 0 : channel;
-            const float a = sample->data[index * sample->channels + c];
-            const float b = sample->data[next * sample->channels + c];
-            (channel ? right : left)[frame] += (a + (b - a) * fraction) * amplitude;
+        pad->position = index;
+    } else {
+        double position = pad->position;
+        const int stereo = sample->channels != 1;
+        for (; frame < end; ++frame) {
+            if (position >= frames) {
+                if (mode != PAD_LOOP) {
+                    pad->playing = 0;
+                    break;
+                }
+                position = fmod(position, frames);
+            }
+            const uint32_t index = (uint32_t)position;
+            const uint32_t next = index + 1 < frames ? index + 1 :
+                                  mode == PAD_LOOP ? 0 : index;
+            const float fraction = (float)(position - index);
+            if (stereo) {
+                const float* a = data + 2 * (size_t)index;
+                const float* b = data + 2 * (size_t)next;
+                left[frame] += (a[0] + (b[0] - a[0]) * fraction) * amplitude;
+                right[frame] += (a[1] + (b[1] - a[1]) * fraction) * amplitude;
+            } else {
+                const float value = (data[index] + (data[next] - data[index]) * fraction) *
+                                    amplitude;
+                left[frame] += value;
+                right[frame] += value;
+            }
+            position += step;
         }
-        pad->position += step;
+        pad->position = position;
     }
-    if (mode != PAD_LOOP && pad->position >= sample->frames) {
+    if (mode != PAD_LOOP && pad->position >= frames) {
         pad->playing = 0;
     }
 }

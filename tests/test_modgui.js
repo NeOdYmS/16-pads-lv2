@@ -12,6 +12,7 @@ class Element {
         this.listeners = {};
         this.className = "";
         this.value = "";
+        this.style = {};
         this._text = "";
         this.classList = {
             contains: name => this.className.split(/\s+/).includes(name),
@@ -67,6 +68,14 @@ for (const name of ["sampler16-grid", "sampler16-status"]) {
     root.appendChild(element);
 }
 const source = fs.readFileSync("modgui/script.js", "utf8");
+for (const symbol of ["level_l", "level_r"]) {
+    const meter = new Element("div");
+    meter.setAttribute("data-meter", symbol);
+    const fill = new Element("div");
+    fill.className = "sampler16-meter-fill";
+    meter.appendChild(fill);
+    root.appendChild(meter);
+}
 const callback = new vm.Script("(" + source + ")").runInNewContext({
     document: {createElement: tag => new Element(tag)}
 });
@@ -83,6 +92,10 @@ assert.equal(root.querySelector("input"), null);
 assert.equal(root.querySelector('[data-port="gain01"]'), null);
 assert.equal(root.querySelector('[data-port="note01"]'), null);
 const button = root.querySelector('[data-trigger="trigger01"]');
+assert.equal(button.querySelector(".sampler16-number").textContent, "01");
+assert.equal(root.querySelectorAll(".sampler16-number").length, 16);
+assert.equal(root.querySelector("[data-sample]").textContent, "");
+assert(!fs.readFileSync("modgui/icon.html", "utf8").includes("<footer"));
 button.emit("keydown", {key: " ", repeat: false});
 button.emit("keydown", {key: " ", repeat: true});
 button.emit("keyup", {key: " "});
@@ -96,6 +109,23 @@ mode.value = 2;
 mode.emit("change");
 assert.deepEqual(calls.at(-1), {symbol: "mode01", value: 2});
 function port(symbol, value) { callback({type: "change", icon: [root], symbol, value}, funcs); }
+port("level_l", -30);
+port("level_r", 6);
+assert.equal(root.querySelector('[data-meter="level_l"]').querySelector(".sampler16-meter-fill").style.width, "50%");
+assert.equal(root.querySelector('[data-meter="level_r"]').querySelector(".sampler16-meter-fill").style.width, "100%");
+assert(root.querySelector('[data-meter="level_r"]').classList.contains("sampler16-meter-clip"));
+port("level_r", -60);
+assert.equal(root.querySelector('[data-meter="level_r"]').querySelector(".sampler16-meter-fill").style.width, "0%");
+assert(!root.querySelector('[data-meter="level_r"]').classList.contains("sampler16-meter-clip"));
+assert(!fs.readFileSync("modgui/icon.html", "utf8").includes('mod-role="bypass"'));
+{
+    const html = fs.readFileSync("modgui/icon.html", "utf8");
+    const input = html.slice(html.indexOf('class="mod-pedal-input"'), html.indexOf('class="mod-pedal-output"'));
+    const output = html.slice(html.indexOf('class="mod-pedal-output"'));
+    assert(/mod-role="input-midi-port" mod-port-symbol="events"/.test(input));
+    assert(/mod-port-symbol="left"/.test(output) && /mod-port-symbol="right"/.test(output));
+    assert.equal((html.match(/mod-role="(input|output)-[a-z]+-port"/g) || []).length, 3);
+}
 port("mode01", 1);
 port("active01", 1);
 assert(button.classList.contains("sampler16-blinking"));
@@ -116,6 +146,8 @@ const uri = "https://github.com/NeOdYmS/16-pads-lv2#sampler";
 callback({type: "change", icon: [root], uri: uri + ":sample01",
           value: "/host/kick.wav"}, funcs);
 assert.equal(root.querySelector('[data-sample="' + uri + ':sample01"]').textContent, "kick.wav");
+callback({type: "change", icon: [root], uri: uri + ":sample01", value: ""}, funcs);
+assert.equal(root.querySelector('[data-sample="' + uri + ':sample01"]').textContent, "");
 callback({type: "change", icon: [root], uri: uri + ":error", value: "Bad WAV"}, funcs);
 assert.equal(root.querySelector(".sampler16-status").textContent, "Bad WAV");
 callback({type: "start", icon: [root], ports: []}, {set_port_value() {}});

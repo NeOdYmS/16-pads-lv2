@@ -40,14 +40,10 @@ static void playback(void)
     near((float)pad.position, 0);
     assert(pad_active(&pad) == 1);
 
-    pad.note_held = 1;
+    pad.gate_held = 1;
     pad_release(&pad, PAD_TRIG);
     assert(pad_active(&pad));
-    pad.note_held = 0;
-    pad.cc_held = 1;
-    pad_release(&pad, PAD_TRIG);
-    assert(pad_active(&pad));
-    pad.cc_held = 0;
+    pad.gate_held = 0;
     pad_release(&pad, PAD_TRIG);
     assert(!pad_active(&pad));
     pad_trigger(&pad, 1);
@@ -105,7 +101,7 @@ static void stop_on_retrigger(void)
     pad_trigger(&pad, 1);
     assert(pad_active(&pad) == 1);
     pad_stop(&pad);
-    pad.note_held = 1;
+    pad.gate_held = 1;
     pad_trigger(&pad, 1);
     pad_trigger(&pad, 1);
     assert(!pad_active(&pad));
@@ -113,7 +109,7 @@ static void stop_on_retrigger(void)
     assert(pad_active(&pad) == 1);
     pad_release(&pad, PAD_TRIG);
     assert(pad_active(&pad) == 1);
-    pad.note_held = 0;
+    pad.gate_held = 0;
     pad_release(&pad, PAD_TRIG);
     assert(!pad_active(&pad));
 }
@@ -201,15 +197,84 @@ static void decoder(void)
     assert(!remove(path));
 }
 
+static void multi_frame_wav(const char* path, const int16_t* values,
+                            uint32_t count)
+{
+    FILE* file = fopen(path, "wb");
+    assert(file);
+    assert(fwrite("RIFF", 1, 4, file) == 4);
+    write_bytes(file, 36 + count * 2, 4);
+    assert(fwrite("WAVEfmt ", 1, 8, file) == 8);
+    write_bytes(file, 16, 4);
+    write_bytes(file, 1, 2);
+    write_bytes(file, 1, 2);
+    write_bytes(file, 48000, 4);
+    write_bytes(file, 96000, 4);
+    write_bytes(file, 2, 2);
+    write_bytes(file, 16, 2);
+    assert(fwrite("data", 1, 4, file) == 4);
+    write_bytes(file, count * 2, 4);
+    for (uint32_t i = 0; i < count; ++i) {
+        write_bytes(file, (uint16_t)values[i], 2);
+    }
+    assert(!fclose(file));
+}
+
+static void latency(void)
+{
+    const char* path = "build/test-latency.wav";
+    char error[160];
+    /* Near-silent lead-in (< -72 dBFS) is dropped so the hit starts at once. */
+    const int16_t padded[] = {0, 3, -5, 0, 16384, 8192, 0, 4};
+    multi_frame_wav(path, padded, 8);
+    Sample* sample = sample_load(path, error, sizeof(error));
+    assert(sample && sample->frames == 4);
+    near(sample->data[0], 0.5f);
+    near(sample->data[1], 0.25f);
+    sample_free(sample);
+    /* Fully silent samples are preserved. */
+    const int16_t silent[] = {0, 1, -1};
+    multi_frame_wav(path, silent, 3);
+    sample = sample_load(path, error, sizeof(error));
+    assert(sample && sample->frames == 3);
+    sample_free(sample);
+    /* Long files cross the buffered-read chunk boundary intact. */
+    static int16_t ramp[10000];
+    for (unsigned i = 0; i < 10000; ++i) {
+        ramp[i] = (int16_t)(i + 1000);
+    }
+    multi_frame_wav(path, ramp, 10000);
+    sample = sample_load(path, error, sizeof(error));
+    assert(sample && sample->frames == 10000);
+    near(sample->data[9999], 10999.0f / 32768.0f);
+    assert(!remove(path));
+
+    /* Native-rate fast path matches interpolation and wraps loops exactly. */
+    Pad pad = {0};
+    pad.sample = sample;
+    float left[64] = {0}, right[64] = {0};
+    pad_trigger(&pad, 1);
+    pad.position = 9990;
+    pad_render(&pad, PAD_LOOP, 2, 48000, left, right, 0, 20);
+    near(left[0], 2 * 10990.0f / 32768.0f);
+    near(right[9], 2 * 10999.0f / 32768.0f);
+    near(left[10], 2 * 1000.0f / 32768.0f);
+    assert(pad.playing && pad.position == 10);
+    pad.position = 9995;
+    memset(left, 0, sizeof(left));
+    pad_render(&pad, PAD_ONE_SHOT, 1, 48000, left, right, 0, 20);
+    near(left[4], 10999.0f / 32768.0f);
+    near(left[5], 0);
+    assert(!pad.playing);
+    sample_free(sample);
+}
+
 int main(void)
 {
     playback();
     stop_on_retrigger();
     decoder();
-    assert(midi_assignment(-1) == -1);
-    assert(midi_assignment(NAN) == -1);
-    assert(midi_assignment(128) == -1);
-    assert(midi_assignment(60) == 60);
+    latency();
     assert(pad_mode(0) == PAD_ONE_SHOT);
     assert(pad_mode(1) == PAD_LOOP);
     assert(pad_mode(2) == PAD_TRIG);
