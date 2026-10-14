@@ -125,6 +125,15 @@ assert(!fs.readFileSync("modgui/icon.html", "utf8").includes('mod-role="bypass"'
     assert(/mod-role="input-midi-port" mod-port-symbol="events"/.test(input));
     assert(/mod-port-symbol="left"/.test(output) && /mod-port-symbol="right"/.test(output));
     assert.equal((html.match(/mod-role="(input|output)-[a-z]+-port"/g) || []).length, 3);
+    // MOD-UI zooms/focuses the pedal on each click whose target has class mod-drag-handle;
+    // keep exactly one full-surface handle so a click never triggers two zooms.
+    const handles = html.match(/<[^>]*mod-role="drag-handle"[^>]*>/g);
+    assert.equal(handles.length, 1);
+    assert(/class="sampler16-drag-surface mod-drag-handle"/.test(handles[0]));
+    const css = fs.readFileSync("modgui/style.css", "utf8");
+    assert(/\.sampler16 \.sampler16-drag-surface\.mod-drag-handle \{[^}]*z-index: -1/.test(css));
+    // Header text and read-only meters are click-through: move cursor, no text selection.
+    assert(/\.sampler16 header \{[^}]*pointer-events: none;[^}]*user-select: none/.test(css));
 }
 port("mode01", 1);
 port("active01", 1);
