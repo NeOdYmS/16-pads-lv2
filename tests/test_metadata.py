@@ -29,7 +29,7 @@ class MetadataTests(unittest.TestCase):
         self.assertNotIn("modgui:gui", text)
         self.assertIn('foaf:name "NeOdYmS"', text)
         self.assertIn("doap:homepage", text)
-        self.assertIn("lv2:microVersion 12", text)
+        self.assertIn("lv2:microVersion 13", text)
         self.assertIn("lv2:hardRTCapable", text)
         # MOD-UI truncates control labels to 16 characters.
         for name in re.findall(r'lv2:ControlPort ;[^]]*?lv2:name "([^"]*)"', text):
