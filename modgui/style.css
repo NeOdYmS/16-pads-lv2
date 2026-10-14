@@ -11,19 +11,29 @@
     color: #fafafa;
     font-family: sans-serif;
     box-sizing: border-box;
+    user-select: none;
+    -webkit-user-select: none;
 }
 /* Lets the dark gray background (outside the pads and header controls) act
    as a drag handle, like the pedal artwork does on other MOD-UI plugins. It
    sits behind every interactive element so clicks on pads/selects/meters are
    unaffected, while clicks on the surrounding padding/background start a
-   pedal move. */
-.sampler16-drag-surface {
+   pedal move. The mod-drag-handle class also makes MOD-UI zoom/focus the
+   pedal on click, as with stock pedals; MOD's own rule for that class
+   (absolute, z-index 20) is overridden so pads stay clickable. */
+.sampler16 .sampler16-drag-surface.mod-drag-handle {
     position: absolute;
     inset: 0;
     z-index: -1;
     cursor: move;
 }
 .sampler16 header {
+    /* Click-through: header text and meters are read-only, so clicks fall
+       to the single background drag handle (one zoom, move cursor, no text
+       selection). */
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
     display: flex;
     align-items: center;
     justify-content: space-between;
