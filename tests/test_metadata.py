@@ -30,6 +30,7 @@ class MetadataTests(unittest.TestCase):
         self.assertIn('foaf:name "NeOdYmS"', text)
         self.assertIn("doap:homepage", text)
         self.assertIn("lv2:microVersion 10", text)
+        self.assertIn("doap:license <http://opensource.org/licenses/MIT>", text)
         self.assertEqual(text.count('mod:fileTypes "audiotrack"'), 16)
         for name in ("level_l", "level_r"):
             self.assertIn(f'lv2:symbol "{name}"', text)

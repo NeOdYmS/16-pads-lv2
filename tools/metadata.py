@@ -94,6 +94,7 @@ def metadata():
     doap:description "16-pad WAV sampler with independent playback modes" ;
     rdfs:comment "16-pad WAV sampler: One-shot, Loop, Trig; MIDI and samples configured in host settings." ;
     doap:homepage <https://github.com/NeOdYmS/16-pads-lv2> ;
+    doap:license <http://opensource.org/licenses/MIT> ;
     doap:maintainer [
         foaf:name "NeOdYmS" ;
         foaf:homepage <https://github.com/NeOdYmS/16-pads-lv2>

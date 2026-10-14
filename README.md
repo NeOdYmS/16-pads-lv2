@@ -316,15 +316,18 @@ undefined even though they are defined by the MOD extension.
 
 The intended distribution platform is
 [PatchStorage LV2 Plugins](https://patchstorage.com/platform/lv2-plugins/).
-Nothing has been published. The current project is **not release-ready**:
-there is no repository licence yet, and target MODEP integration must be
+Nothing has been published. The project is licensed under the MIT licence
+(see `LICENSE`, declared as `doap:license` in the LV2 metadata): reuse is free
+provided the copyright notice is kept. Target MODEP integration must be
 confirmed before describing it as compatible.
 
 Before distributing:
 
-1. Have the copyright holder choose a licence and add its full text as
-   `LICENSE`. Add the corresponding `doap:license` URI to generated LV2
-   metadata. Do not assume the public repository grants redistribution rights.
+1. Upload with the official
+   [patchstorage-lv2-uploader](https://github.com/patchstorage/patchstorage-lv2-uploader)
+   (target `rpi-aarch64`). Its `plugins.json` needs
+   `"16-pads.lv2": {"source_code_url": "https://github.com/NeOdYmS/16-pads-lv2", "donate_url": ""}`;
+   run `uploader.py prepare 16-pads.lv2`, review `dist/`, then `push`.
 2. Record the tested Pi model, Linux architecture/glibc version, MODEP version,
    and whether file selectors, MIDI Learn, and monitored pad feedback work.
    Run the playback and state-persistence checks described above.
@@ -356,5 +359,5 @@ Suggested listing description, to finalize after target verification:
 > included instructions for tested hosts, WAV formats, and limitations.
 
 Use the README's format/memory/headroom limitations in the listing and state
-the verified compatibility scope. Publication, uploading assets, and choosing
-a licence require separate authorization from the owner.
+the verified compatibility scope. Publication and uploading
+release assets require separate authorization from the owner.
