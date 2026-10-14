@@ -1,0 +1,81 @@
+.sampler16 {
+    width: 640px;
+    max-width: 100%;
+    padding: 22px;
+    border: 3px solid #161719;
+    border-radius: 12px;
+    background: #303239;
+    color: #fafafa;
+    font-family: sans-serif;
+    box-sizing: border-box;
+}
+.sampler16 header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 18px;
+}
+.sampler16 header strong { letter-spacing: 3px; color: #f3aa5a; }
+.sampler16 header span, .sampler16 footer { font-size: 11px; color: #c6c8cf; }
+.sampler16-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.sampler16-connectors { display: flex; gap: 18px; align-items: center; margin-bottom: 15px; }
+.sampler16-bypass { width: 10px; height: 10px; background: #666; border-radius: 50%; }
+.sampler16-bypass.on { background: #f3aa5a; }
+.sampler16-pad {
+    background: #454851;
+    border: 2px solid #777a85;
+    border-bottom: 5px solid #1b1d22;
+    border-radius: 7px;
+    padding: 9px;
+}
+.sampler16-pad .sampler16-hit {
+    display: block;
+    width: 100%;
+    min-height: 42px;
+    margin: 0 0 7px;
+    background: #646874;
+    color: #fff;
+    border: 2px solid #a7aab4;
+    border-radius: 5px;
+    font-size: 14px;
+    font-weight: bold;
+    touch-action: none;
+}
+.sampler16-pad .sampler16-hit.sampler16-held,
+.sampler16-pad .sampler16-hit.sampler16-active { background: #ac6527; }
+.sampler16-pad .sampler16-hit.sampler16-blinking { animation: sampler16-blink 1s infinite; }
+@keyframes sampler16-blink {
+    0%, 49% { background: #c68136; border-color: #ffe1aa; }
+    50%, 100% { background: #454851; border-color: #777a85; }
+}
+@media (prefers-reduced-motion: reduce) {
+    .sampler16-pad .sampler16-hit.sampler16-blinking { animation: none; background: #c68136; }
+}
+.sampler16-pad label {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 5px 0;
+    font-size: 11px;
+}
+.sampler16-pad select { width: 81px; }
+.sampler16-pad select {
+    color: #fff;
+    background: #202127;
+    border: 1px solid #8c8e99;
+    border-radius: 3px;
+    font-size: 11px;
+}
+.sampler16-pad .sampler16-sample {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+    font-size: 10px;
+    color: #d6d7dc;
+}
+.sampler16-pad button { margin-top: 5px; font-size: 10px; }
+.sampler16-status { min-height: 18px; margin-top: 10px; font-size: 12px; color: #ffbf85; }
+.sampler16 footer { margin-top: 15px; line-height: 1.5; }
