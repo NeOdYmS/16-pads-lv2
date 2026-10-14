@@ -29,8 +29,12 @@ class MetadataTests(unittest.TestCase):
         self.assertNotIn("modgui:gui", text)
         self.assertIn('foaf:name "NeOdYmS"', text)
         self.assertIn("doap:homepage", text)
-        self.assertIn("lv2:microVersion 11", text)
+        self.assertIn("lv2:microVersion 12", text)
         self.assertIn("lv2:hardRTCapable", text)
+        # MOD-UI truncates control labels to 16 characters.
+        for name in re.findall(r'lv2:ControlPort ;[^]]*?lv2:name "([^"]*)"', text):
+            self.assertLessEqual(len(name), 16, name)
+        self.assertIn('lv2:name "Pad 01 Trigger"', text)
         self.assertIn("doap:license <http://opensource.org/licenses/MIT>", text)
         self.assertEqual(text.count('mod:fileTypes "audiotrack"'), 16)
         for name in ("level_l", "level_r"):

@@ -59,7 +59,7 @@ def metadata():
         for offset, (symbol, name, default, minimum, maximum) in enumerate([
             ("mode", "Mode", 0, 0, 2),
             ("gain", "Gain", 0, -60, 12),
-            ("trigger", "Trigger (MODEP MIDI mapping)", 0, 0, 1),
+            ("trigger", "Trigger", 0, 0, 1),
         ]):
             extra = ""
             if symbol == "mode":
@@ -100,7 +100,7 @@ def metadata():
         foaf:homepage <https://github.com/NeOdYmS/16-pads-lv2>
     ] ;
     mod:brand "NeOdYmS" ; mod:label "16 Pads" ;
-    lv2:minorVersion 0 ; lv2:microVersion 11 ;
+    lv2:minorVersion 0 ; lv2:microVersion 12 ;
     lv2:requiredFeature urid:map, worker:schedule ;
     lv2:optionalFeature log:log, lv2:hardRTCapable ;
     lv2:extensionData worker:interface, state:interface ;
