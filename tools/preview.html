@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>16 Pads - MOD callback preview (not an audio host)</title>
+<link rel="stylesheet" href="../modgui/style.css">
+<style>body { margin: 24px; background: #15161a; color: white; font-family: sans-serif; }</style>
+<h1>16 Pads UI preview</h1>
+<p>This is a callback simulator, not MODEP or an audio host.</p>
+<div id="preview"></div>
+<pre id="calls"></pre>
+<script>
+async function preview() {
+    const container = document.getElementById("preview");
+    container.innerHTML = (await (await fetch("../modgui/icon.html")).text()).replace("{{cns}}", "");
+    const source = await (await fetch("../modgui/script.js")).text();
+    const callback = new Function("return (" + source + ")")();
+    const root = container.firstElementChild;
+    const calls = document.getElementById("calls");
+    window.samplerCalls = [];
+    window.samplerCallback = callback;
+    window.samplerRoot = root;
+    const funcs = {
+        set_port_value(symbol, value) {
+            window.samplerCalls.push({symbol, value});
+            calls.textContent = JSON.stringify(window.samplerCalls, null, 2);
+        },
+        patch_get() {},
+        patch_set(uri, type, value) {
+            window.samplerCalls.push({uri, type, value});
+            calls.textContent = JSON.stringify(window.samplerCalls, null, 2);
+            callback({type: "change", icon: [root], uri, value}, funcs);
+        }
+    };
+    window.samplerFuncs = funcs;
+    callback({type: "start", icon: [root], ports: [], parameters: []}, funcs);
+}
+preview().catch(function (error) {
+    document.getElementById("calls").textContent = error.stack;
+});
+</script>
+</html>
