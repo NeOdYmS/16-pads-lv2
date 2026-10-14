@@ -1,5 +1,6 @@
 .sampler16 {
     position: relative;
+    isolation: isolate;
     width: 640px;
     min-width: 640px;
     padding: 24px;
@@ -10,6 +11,17 @@
     color: #fafafa;
     font-family: sans-serif;
     box-sizing: border-box;
+}
+/* Lets the dark gray background (outside the pads and header controls) act
+   as a drag handle, like the pedal artwork does on other MOD-UI plugins. It
+   sits behind every interactive element so clicks on pads/selects/meters are
+   unaffected, while clicks on the surrounding padding/background start a
+   pedal move. */
+.sampler16-drag-surface {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    cursor: move;
 }
 .sampler16 header {
     display: flex;
