@@ -4,6 +4,13 @@ An initial 16-pad WAV sampler for Linux aarch64 / MODEP. The DSP is portable C11
 the optional MPC-inspired interface is a MOD HTML/CSS/JavaScript skin, **not a
 native LV2 UI binary**. The default bundle uses the host's generic controls.
 
+![16 Pads MOD GUI](modgui/screenshot.png)
+
+Download the Raspberry Pi 64-bit (aarch64) bundle from the
+[GitHub releases](https://github.com/NeOdYmS/16-pads-lv2/releases), extract
+`16-pads.lv2` into MODEP's LV2 folder (`/var/modep/lv2` on MODEP), then restart
+mod-host and mod-ui. Licensed under MIT (see `LICENSE`).
+
 ## Agreed behavior
 
 - **Global polyphony, mono per pad:** all 16 pads can play together. Triggering
