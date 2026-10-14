@@ -6,6 +6,7 @@
 
 #define PAD_COUNT 16
 #define SAMPLE_MAX_BYTES (64u * 1024u * 1024u)
+#define SAMPLE_SILENCE (1.0f / 4096.0f)
 
 typedef enum { PAD_ONE_SHOT, PAD_LOOP, PAD_TRIG } PadMode;
 

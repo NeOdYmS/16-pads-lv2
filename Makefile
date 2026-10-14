@@ -9,7 +9,7 @@ BUNDLE ?= build/16-pads.lv2
 LV2DIR ?= $(HOME)/.lv2
 ENABLE_MOD_GUI ?= 0
 
-.PHONY: all test test-core test-ui install clean FORCE
+.PHONY: all test test-core test-ui bench install clean FORCE
 all: $(BUNDLE)/sampler.so $(BUNDLE)/manifest.ttl
 
 $(BUNDLE):
@@ -39,6 +39,13 @@ test-core: build/test_sampler
 
 test: test-core build/test_plugin
 	./build/test_plugin
+
+build/bench_render: tools/bench_render.c src/sampler.c src/sampler.h
+	mkdir -p build
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) tools/bench_render.c src/sampler.c -lm -o $@
+
+bench: build/bench_render
+	./build/bench_render
 
 test-ui:
 	$(NODE) tests/test_modgui.js

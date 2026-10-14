@@ -285,6 +285,25 @@ without a limiter: simultaneous pads and positive gain require output headroom.
 There are no envelopes, fades, time-stretching, or disk streaming; abrupt stops
 can click. Pi CPU load, underruns, and latency have **not** been measured.
 
+### Latency
+
+The plugin adds **no algorithmic latency** (no lookahead, no reported latency
+port): a trigger seen at the start of an audio block plays from that block's
+first frame. Perceived latency comes from:
+
+- **MODEP's audio buffer:** a `triggerNN` change mapped through MIDI Learn is
+  applied by mod-host between blocks, so the delay is up to one JACK period
+  plus the audio interface's buffering. At 48 kHz, 128 frames is about 2.7 ms
+  per period and 256 frames about 5.3 ms. Use the smallest buffer that runs
+  without xruns. MODEP exposes the buffer size in its settings.
+- **Silence at the start of samples:** leading frames below -72 dBFS are
+  trimmed when a sample is loaded, so hits start immediately. Intentional soft
+  fade-ins above that level are kept.
+- **CPU headroom:** samples at the same rate as MODEP (usually 48 kHz) use a
+  copy-only path without interpolation. Other rates use linear interpolation.
+  Prefer 48 kHz WAV files. `make bench` measures the worst case (16 stereo pads
+  playing at once) as a percentage of the real-time budget.
+
 Sample paths are saved through LV2 State and `state:mapPath` when provided.
 Without path mapping, saved paths remain host-local/non-portable. Audio bytes
 are not embedded in state; relocating/copying referenced files is the host's
