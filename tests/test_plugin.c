@@ -2,6 +2,19 @@
 
 #include <assert.h>
 
+#ifdef TEST_LILV_STATE
+#ifdef __clang__
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wnullability-extension"
+#endif
+#include <lilv/lilv.h>
+#ifdef __clang__
+#pragma clang diagnostic pop
+#endif
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
+
 typedef union {
     uint64_t align;
     uint8_t bytes[8192];
@@ -160,6 +173,9 @@ static const void* retrieve(LV2_State_Handle handle, uint32_t key, size_t* size,
     Host* host = handle;
     for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
         if (key == host->plugin->uris.sample[pad]) {
+            if (!host->state_type[pad]) {
+                return NULL;
+            }
             *size = strlen(host->state[pad]) + 1;
             *type = host->state_type[pad];
             *flags = LV2_STATE_IS_POD;
@@ -189,6 +205,116 @@ static void fixture(void)
     assert(fwrite(wav, 1, sizeof(wav), file) == sizeof(wav));
     assert(!fclose(file));
 }
+
+#ifdef TEST_LILV_STATE
+static const char* unmap_uri(LV2_URID_Unmap_Handle handle, LV2_URID id)
+{
+    const Host* host = handle;
+    assert(id && id <= host->count);
+    return host->names[id - 1];
+}
+
+static void disk_state_roundtrip(void)
+{
+    Host host = {0};
+    LV2_URID_Map map = {&host, map_uri};
+    LV2_URID_Unmap unmap = {&host, unmap_uri};
+    LV2_Worker_Schedule worker = {&host, enqueue};
+    const LV2_Feature map_feature = {LV2_URID__map, &map};
+    const LV2_Feature worker_feature = {LV2_WORKER__schedule, &worker};
+    const LV2_Feature* features[] = {&map_feature, &worker_feature, NULL};
+    char cwd[PATH_CAPACITY], bundle[PATH_CAPACITY * 2];
+    char sample[PATH_CAPACITY * 2], directory[PATH_CAPACITY * 2];
+    assert(getcwd(cwd, sizeof(cwd)));
+    snprintf(bundle, sizeof(bundle), "%s/build/state-test/16-pads.lv2/", cwd);
+    snprintf(sample, sizeof(sample), "%s/build/test-plugin.wav", cwd);
+    assert(strlen(sample) < PATH_CAPACITY);
+    snprintf(directory, sizeof(directory), "%s/build/state-test/session-%ld",
+             cwd, (long)getpid());
+    assert(!mkdir(directory, 0700));
+    LilvWorld* world = lilv_world_new();
+    assert(world);
+    LilvNode* bundle_uri = lilv_new_file_uri(world, NULL, bundle);
+    lilv_world_load_bundle(world, bundle_uri);
+    LilvNode* uri = lilv_new_uri(world, SAMPLER_URI);
+    const LilvPlugin* plugin = lilv_plugins_get_by_uri(
+        lilv_world_get_all_plugins(world), uri);
+    assert(plugin);
+    Buffer input = {0}, output = {0};
+    float left[16], right[16], triggers[PAD_COUNT] = {0};
+    host.synchronous = 1;
+
+    /* Sparse and empty states must survive disk serialization, a fresh
+       instance, and restoration over an existing assignment. */
+    for (unsigned snapshot = 0; snapshot < 3; ++snapshot) {
+        char state_dir[PATH_CAPACITY * 3], state_file[PATH_CAPACITY * 3 + 32];
+        snprintf(state_dir, sizeof(state_dir), "%s/snapshot-%u", directory, snapshot);
+        assert(!mkdir(state_dir, 0700));
+        snprintf(state_file, sizeof(state_file), "%s/effect.ttl", state_dir);
+        LilvInstance* instance = lilv_plugin_instantiate(plugin, 48000, features);
+        assert(instance);
+        host.plugin = lilv_instance_get_handle(instance);
+        host.plugin->events = (const LV2_Atom_Sequence*)input.bytes;
+        host.plugin->notify = (LV2_Atom_Sequence*)output.bytes;
+        host.plugin->left = left;
+        host.plugin->right = right;
+        for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
+            const int assigned = snapshot == 0 ? pad == 0 || pad == 15 :
+                                 snapshot == 1 && pad == 7;
+            if (assigned) {
+                patch(&input, &map, host.plugin, pad, sample);
+                block(&host, &output, 16);
+                assert(host.plugin->pads[pad].sample);
+            }
+        }
+        LilvState* state = lilv_state_new_from_instance(
+            plugin, instance, &map, NULL, state_dir, state_dir, state_dir,
+            NULL, NULL, LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE, features);
+        assert(state);
+        assert(!lilv_state_save(world, &map, &unmap, state, NULL,
+                               state_dir, "effect.ttl"));
+        lilv_state_free(state);
+        lilv_instance_free(instance);
+
+        state = lilv_state_new_from_file(world, &map, NULL, state_file);
+        assert(state);
+        instance = lilv_plugin_instantiate(plugin, 48000, features);
+        assert(instance);
+        host.plugin = lilv_instance_get_handle(instance);
+        host.plugin->events = (const LV2_Atom_Sequence*)input.bytes;
+        host.plugin->notify = (LV2_Atom_Sequence*)output.bytes;
+        host.plugin->left = left;
+        host.plugin->right = right;
+        /* A missing property must clear a previously assigned pad too. */
+        patch(&input, &map, host.plugin, 3, sample);
+        block(&host, &output, 16);
+        assert(host.plugin->pads[3].sample);
+        lilv_state_restore(state, instance, NULL, NULL,
+                           LV2_STATE_IS_POD | LV2_STATE_IS_PORTABLE, features);
+        empty(&input, &map);
+        for (unsigned pad = 0; pad < PAD_COUNT; ++pad) {
+            const int assigned = snapshot == 0 ? pad == 0 || pad == 15 :
+                                 snapshot == 1 && pad == 7;
+            assert(!!host.plugin->pads[pad].sample == assigned);
+            assert(!!host.plugin->paths[pad][0] == assigned);
+            host.plugin->controls[pad][CONTROL_TRIGGER] = &triggers[pad];
+            triggers[pad] = 1;
+            block(&host, &output, 16);
+            near(left[0], assigned ? 0.5f : 0);
+            triggers[pad] = 0;
+            block(&host, &output, 16);
+        }
+        lilv_instance_free(instance);
+        assert(!lilv_state_delete(world, state));
+        lilv_state_free(state);
+    }
+    assert(!rmdir(directory));
+    lilv_node_free(uri);
+    lilv_node_free(bundle_uri);
+    lilv_world_free(world);
+    puts("Lilv disk state/re-instantiation tests passed");
+}
+#endif
 
 int main(void)
 {
@@ -400,6 +526,9 @@ int main(void)
     assert(meters[0] < previous_level && meters[0] > -60);
     plugin->pads[0].sample = retained;
     cleanup(plugin);
+#ifdef TEST_LILV_STATE
+    disk_state_roundtrip();
+#endif
     assert(!remove("build/test-plugin.wav"));
     puts("LV2 host harness tests passed");
     return 0;

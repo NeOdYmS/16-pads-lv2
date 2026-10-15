@@ -571,9 +571,16 @@ static LV2_State_Status save(LV2_Handle instance, LV2_State_Store_Function store
             report(self, "Sample path changed during state save; retry save");
             return LV2_STATE_ERR_UNKNOWN;
         }
-        char* mapped = snapshot[0] && mapper ?
-                       mapper->abstract_path(mapper->handle, snapshot) : NULL;
-        if (snapshot[0] && mapper && !mapped) {
+        /* An empty atom:Path can resolve to the state file's URI on disk.
+           An absent property already restores the pad as unassigned. */
+        if (!snapshot[0]) {
+            continue;
+        }
+        char* mapped = mapper ? mapper->abstract_path(mapper->handle, snapshot) : NULL;
+        if (mapper && (!mapped || !mapped[0])) {
+            if (mapped) {
+                free_path(features, mapped);
+            }
             report(self, "Host could not map sample path for state save");
             return LV2_STATE_ERR_UNKNOWN;
         }
@@ -581,7 +588,7 @@ static LV2_State_Status save(LV2_Handle instance, LV2_State_Store_Function store
         const LV2_State_Status status = store(
             handle, self->uris.sample[pad], path, strlen(path) + 1,
             self->uris.path, LV2_STATE_IS_POD |
-            ((mapped || !path[0]) ? LV2_STATE_IS_PORTABLE : 0));
+            (mapped ? LV2_STATE_IS_PORTABLE : 0));
         if (mapped) {
             free_path(features, mapped);
         }
