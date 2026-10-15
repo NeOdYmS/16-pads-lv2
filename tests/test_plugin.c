@@ -305,8 +305,15 @@ static void disk_state_roundtrip(void)
             block(&host, &output, 16);
         }
         lilv_instance_free(instance);
-        assert(!lilv_state_delete(world, state));
         lilv_state_free(state);
+        assert(!remove(state_file));
+        snprintf(state_file, sizeof(state_file), "%s/manifest.ttl", state_dir);
+        assert(!remove(state_file));
+        if (snapshot < 2) {
+            snprintf(state_file, sizeof(state_file), "%s/test-plugin.wav", state_dir);
+            assert(!remove(state_file));
+        }
+        assert(!rmdir(state_dir));
     }
     assert(!rmdir(directory));
     lilv_node_free(uri);
