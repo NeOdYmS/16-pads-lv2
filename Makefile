@@ -9,7 +9,7 @@ BUNDLE ?= build/16-pads.lv2
 LV2DIR ?= $(HOME)/.lv2
 ENABLE_MOD_GUI ?= 0
 
-.PHONY: all test test-core test-ui bench install clean FORCE
+.PHONY: all test test-core test-ui test-state bench install clean FORCE
 all: $(BUNDLE)/sampler.so $(BUNDLE)/manifest.ttl
 
 $(BUNDLE):
@@ -50,10 +50,21 @@ bench: build/bench_render
 test-ui:
 	$(NODE) tests/test_modgui.js
 
+build/test_state: tests/test_plugin.c src/plugin.c src/sampler.c src/sampler.h
+	mkdir -p build
+	@set -e; LV2_FLAGS="$$($(PKG_CONFIG) --cflags lv2 lilv-0)"; \
+	LILV_LIBS="$$($(PKG_CONFIG) --libs lilv-0)"; \
+	$(CC) $(CPPFLAGS) $(CFLAGS) $(WARNINGS) -DTEST_LILV_STATE $$LV2_FLAGS \
+		tests/test_plugin.c src/sampler.c -lm $$LILV_LIBS -o $@
+
+test-state: build/test_state
+	$(MAKE) BUNDLE=build/state-test/16-pads.lv2 all
+	./build/test_state
+
 install: all
 	mkdir -p "$(DESTDIR)$(LV2DIR)"
 	cp -R "$(BUNDLE)" "$(DESTDIR)$(LV2DIR)/"
 
 clean:
-	rm -f build/test_sampler build/test_plugin "$(BUNDLE)/sampler.so" \
+	rm -f build/test_sampler build/test_plugin build/test_state "$(BUNDLE)/sampler.so" \
 		"$(BUNDLE)/manifest.ttl" "$(BUNDLE)/sampler.ttl" "$(BUNDLE)/modgui.ttl"

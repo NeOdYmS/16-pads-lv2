@@ -65,6 +65,11 @@ gate controls, asynchronous and synchronous workers, failed/superseded loads,
 state save/restore, and malformed/undersized atom buffers. Python tests check
 the generated port and sample-property metadata.
 
+`make test-state` additionally requires `liblilv-dev` (Homebrew: `lilv`). It
+tests actual Turtle state files through Lilv, the host library used by MOD:
+sparse/empty pad assignments, path mapping, instance destruction and recreation,
+restoration over an existing assignment, and playback after reloading.
+
 `make test-core` runs the core and metadata tests without LV2 headers. For
 address/undefined-behavior checks with a compiler that supports them:
 
@@ -314,11 +319,20 @@ first frame. Perceived latency comes from:
   playing at once) as a percentage of the real-time budget.
 
 Sample paths are saved through LV2 State and `state:mapPath` when provided.
+Unassigned pads are omitted from the state, not saved as empty `atom:Path`
+values (which hosts can resolve to the state file itself). Missing properties
+clear the corresponding pads on restoration.
 Without path mapping, saved paths remain host-local/non-portable. Audio bytes
 are not embedded in state; relocating/copying referenced files is the host's
 responsibility. Control values and MIDI mappings are saved by the host.
 Restore is transactional on load failure and must happen with audio suspended
 (the plugin does not advertise `state:threadSafeRestore`).
+
+In MODEP, save the snapshot after assigning its samples, then save the
+pedalboard to persist the snapshots to disk. Keep the referenced WAV files
+available after reboot. After updating from 1.0, reassign and save affected
+snapshots/pedalboards once: old states containing empty path references are
+not automatically rewritten.
 
 The implementation has passed native tests and generated a Linux aarch64 ELF
 shared library. The target session has also reported successful library loading

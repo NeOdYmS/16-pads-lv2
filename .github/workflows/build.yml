@@ -12,9 +12,9 @@ jobs:
       - name: Install development dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y build-essential pkg-config python3 lv2-dev gcc-aarch64-linux-gnu
+          sudo apt-get install -y build-essential pkg-config python3 lv2-dev liblilv-dev gcc-aarch64-linux-gnu
       - name: Native tests and build
-        run: make test all test-ui
+        run: make test all test-ui test-state
       - name: Sanitizer tests
         run: make -B test CFLAGS="-O1 -g -fsanitize=address,undefined"
       - name: Linux aarch64 bundle
